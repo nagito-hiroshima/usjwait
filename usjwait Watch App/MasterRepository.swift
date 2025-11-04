@@ -19,7 +19,7 @@ final class MasterRepository {
                 shortName: "XRライド",
                 codeName: "SPY",
                 apiTitle: "ev_spy_family_xr",
-                endpoint: "/api/wait?slug=ev_spy_family_xr",
+                endpoint: "https://usjwait.moenaigomi.com/api/wait?slug=ev_spy_family_xr",
                 imageURL: "https://www.usj.co.jp/tridiondata/usj/ja/jp/files/images/gds-images/usj-gds-spy-family-2025-b.jpg",
                 area: "ハリウッド・エリア",
                 active: true

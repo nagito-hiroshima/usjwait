@@ -47,12 +47,14 @@ struct ContentView: View {
                         nameMode: $nameMode
                     )
                 }
+                // 並び替え
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         store.sortAsc.toggle()
                         Task { await store.refresh() }
                     } label: { Image(systemName: store.sortAsc ? "arrow.up" : "arrow.down") }
                 }
+                // 手動更新
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { await store.refresh() } } label: {
                         Image(systemName: "arrow.clockwise")
@@ -97,8 +99,7 @@ private struct FavToolbarButton: View {
 private struct EmptyFavoritesRow: View {
     var body: some View {
         VStack(spacing: 6) {
-            Text("お気に入りが未登録です")
-                .font(.footnote).bold()
+            Text("お気に入りが未登録です").font(.footnote).bold()
             Text("各行の右の ★ をタップして追加してください")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -134,7 +135,8 @@ private struct FooterStatusRow: View {
     }
 }
 
-// MARK: - 行（CODEモードは画像/正式名/エリアを非表示）
+// MARK: - 行（開いたら★を消してスペースを開放 / CODEモードは画像等を非表示）
+// MARK: - 行（右スワイプでお気に入りトグル / 色で状態を表示）
 private struct AttractionRow: View {
     let attraction: Attraction
     let nameMode: NameMode
@@ -150,127 +152,285 @@ private struct AttractionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button { expanded.toggle() } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                    // 1段目：タイトル（略称/コード）＋ 待ち時間
-                    HStack(spacing: 6) {
-                        Text(titleText).font(.headline).bold().lineLimit(1)
-                        Spacer(minLength: 0)
-                        Text(waitText).font(.callout).bold()
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            // 1段目：タイトル＋待ち時間
+            HStack(spacing: 6) {
+                Text(titleText)
+                    .font(.headline)
+                    .bold()
+                    .lineLimit(1)
+                    .layoutPriority(1)
 
-                    if expanded {
-                        // CODEモードでは画像/正式名/エリアを出さない
-                        if nameMode == .short {
-                            HStack(alignment: .top, spacing: 8) {
-                                if let urlString = attraction.imageURL,
-                                   let url = URL(string: urlString) {
-                                    AsyncImage(url: url) { phase in
-                                        switch phase {
-                                        case .empty:
-                                            ProgressView().frame(width: 40, height: 40)
-                                        case .success(let image):
-                                            image.resizable()
-                                                 .scaledToFill()
-                                                 .frame(width: 40, height: 40)
-                                                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        case .failure:
-                                            MonogramIcon(text: attraction.shortName)
-                                        @unknown default:
-                                            MonogramIcon(text: attraction.shortName)
-                                        }
-                                    }
-                                } else {
+                Spacer(minLength: 4)
+
+                Text(waitText)
+                    .font(.callout)
+                    .bold()
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
+            if expanded {
+                if nameMode == .short {
+                    HStack(alignment: .center, spacing: 8) {
+                        if let urlString = attraction.imageURL,
+                           let url = URL(string: urlString) {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .empty:
+                                    ProgressView().frame(width: 44, height: 44)
+                                case .success(let image):
+                                    image.resizable()
+                                         .scaledToFill()
+                                         .frame(width: 44, height: 44)
+                                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                                case .failure:
+                                    MonogramIcon(text: attraction.shortName)
+                                @unknown default:
                                     MonogramIcon(text: attraction.shortName)
                                 }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(attraction.name)
-                                        .font(.subheadline)
-                                        .lineLimit(2)
-                                    if let area = attraction.area, !area.isEmpty {
-                                        Text(area)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                Spacer(minLength: 0)
                             }
+                        } else {
+                            MonogramIcon(text: attraction.shortName)
                         }
 
-                        // 最高・最低・平均（平均は updatedText を併記）
-                        StatsRow(attraction: attraction)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(attraction.name)
+                                .font(.subheadline)
+                                .lineLimit(2)
+                            if let area = attraction.area, !area.isEmpty {
+                                Text(area)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 0)
                     }
+                    .padding(.vertical, 2)
                 }
-            }
-            .buttonStyle(.plain)
 
-            // お気に入りトグル
-            Button(action: onToggleFav) {
-                Image(systemName: isFav ? "star.fill" : "star")
+                CompactStatsRow(attraction: attraction)
+                    .padding(.trailing, 2)
+                    .padding(.bottom, -2)
             }
-            .buttonStyle(.plain)
+        }
+        .contentShape(Rectangle())
+        .padding(8)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+        }
+        // AttractionRow の .background(...) を置き換え
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isFav
+                      ? Color.yellow.opacity(0.2)                  // ← お気に入り時
+                      : Color.black.opacity(0.00))
+        )
+
+        .modifier(FavSwipeModifier(isFav: isFav, onToggleFav: onToggleFav))
+        .contextMenu {
+            Button {
+                onToggleFav()
+                haptic(.success)
+            } label: {
+                Label(isFav ? "お気に入りを外す" : "お気に入りに追加",
+                      systemImage: isFav ? "star.slash" : "star")
+            }
         }
     }
+
+
+
 
     private var waitText: String {
         if let w = attraction.waitMinutes { return "\(w)分" }
         return "--"
     }
+
+    private func haptic(_ type: WKHapticType) {
+        #if os(watchOS)
+        WKInterfaceDevice.current().play(type)
+        #endif
+    }
 }
 
-// MARK: - 統計行（平均の右に API の updated を表示）
-private struct StatsRow: View {
+// MARK: - スワイプアクション共通部品
+private struct FavSwipeModifier: ViewModifier {
+    let isFav: Bool
+    let onToggleFav: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(watchOS 10.0, *) {
+            content
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button {
+                        onToggleFav()
+                        #if os(watchOS)
+                        WKInterfaceDevice.current().play(.success)
+                        #endif
+                    } label: {
+                        Label(isFav ? "外す" : "追加",
+                              systemImage: isFav ? "star.slash" : "star")
+                    }
+                    .tint(.yellow)
+                }
+        } else {
+            content // watchOS 9以下はcontextMenuのみ（上で用意済み）
+        }
+    }
+}
+
+// MARK: - コンパクト統計カード行（値と時刻を分離して2行に）
+// MARK: - コンパクト統計カード行（SE対策：自動で2段にフォールバック）
+private struct CompactStatsRow: View {
     let attraction: Attraction
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     private var avgDisplay: Int? { attraction.avgToday ?? attraction.median }
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("最低").font(.caption2).foregroundStyle(.secondary)
-                Text(minText).font(.caption).monospacedDigit()
+        Group {
+            if #available(watchOS 10.0, *) {
+                // 横3枚が入らなければ、2段（2+1）に自動で切替
+                ViewThatFits(in: .horizontal) {
+                    // 1) 通常：横3枚
+                    HStack(spacing: 6) {
+                        cardMin(compact: false)
+                        cardMax(compact: false)
+                        cardAvg(compact: false)
+                    }
+                    // 2) フォールバック：上2枚＋下1枚（コンパクト表示）
+                    VStack(spacing: 6) {
+                        HStack(spacing: 6) {
+                            cardMin(compact: true)
+                            cardMax(compact: true)
+                        }
+                        cardAvg(compact: true)
+                    }
+                }
+            } else {
+                // watchOS 9系など：幅が狭い/アクセシビリティ文字なら2段に
+                GeometryReader { geo in
+                    let narrow = geo.size.width < 150 || typeSize.isAccessibilitySize
+                    if narrow {
+                        VStack(spacing: 6) {
+                            HStack(spacing: 6) {
+                                cardMin(compact: true)
+                                cardMax(compact: true)
+                            }
+                            cardAvg(compact: true)
+                        }
+                    } else {
+                        HStack(spacing: 6) {
+                            cardMin(compact: false)
+                            cardMax(compact: false)
+                            cardAvg(compact: false)
+                        }
+                    }
+                }
+                .frame(minHeight: 0) // 高さ計算安定化
             }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("最高").font(.caption2).foregroundStyle(.secondary)
-                Text(maxText).font(.caption).monospacedDigit()
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("平均").font(.caption2).foregroundStyle(.secondary)
-                Text(avgWithTimeText).font(.caption).monospacedDigit()
-            }
-            Spacer(minLength: 0)
         }
+        .padding(.top, 2)
     }
 
-    private var minText: String {
-        if let v = attraction.min {
-            if let t = attraction.minTime, !t.isEmpty { return "\(v)分 (\(t))" }
-            return "\(v)分"
-        }
-        return "--"
+    // カード生成ヘルパ
+    private func cardMin(compact: Bool) -> some View {
+        StatCard(
+            title: "最低",
+            systemName: "arrow.down.to.line",
+            valueText: valueText(attraction.min),
+            subtitle: timeText(attraction.minTime),
+            tint: .cyan,
+            compact: compact
+        )
+    }
+    private func cardMax(compact: Bool) -> some View {
+        StatCard(
+            title: "最高",
+            systemName: "arrow.up.to.line",
+            valueText: valueText(attraction.max),
+            subtitle: timeText(attraction.maxTime),
+            tint: .orange,
+            compact: compact
+        )
+    }
+    private func cardAvg(compact: Bool) -> some View {
+        StatCard(
+            title: "平均",
+            systemName: "gauge",
+            valueText: valueText(avgDisplay),
+            subtitle: avgTimeText,
+            tint: .green,
+            compact: compact
+        )
     }
 
-    private var maxText: String {
-        if let v = attraction.max {
-            if let t = attraction.maxTime, !t.isEmpty { return "\(v)分 (\(t))" }
-            return "\(v)分"
-        }
-        return "--"
-    }
-
-    private var avgWithTimeText: String {
-        guard let v = avgDisplay else { return "--" }
-        if let t = attraction.updatedText, !t.isEmpty {
-            return "\(v)分 (\(t))"   // APIの updated を優先
-        }
-        if let d = attraction.lastUpdated {
-            let time = d.formatted(date: .omitted, time: .shortened)
-            return "\(v)分 (\(time))"
-        }
-        return "\(v)分"
+    // 表示文字列
+    private func valueText(_ v: Int?) -> String { v.map { "\($0)分" } ?? "--" }
+    private func timeText(_ t: String?) -> String? { (t?.isEmpty == false) ? t : nil }
+    private var avgTimeText: String? {
+        if let t = attraction.updatedText, !t.isEmpty { return t }
+        if let d = attraction.lastUpdated { return d.formatted(date: .omitted, time: .shortened) }
+        return nil
     }
 }
+
+
+// ミニカード部品（2行：値／時刻）
+private struct StatCard: View {
+    let title: String
+    let systemName: String
+    let valueText: String
+    let subtitle: String?
+    let tint: Color
+    var compact: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 2 : 3) {
+            // 見出し（アイコン＋タイトル）← ここをより小さく
+            HStack(spacing: 2) {
+                Image(systemName: systemName)
+                    .font(.system(size: compact ? 9 : 10)) // 旧: .caption2
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: compact ? 8 : 9)) // 旧: .caption2
+                }
+            }
+            .foregroundStyle(.secondary)
+
+            Text(valueText)
+                .font(compact ? .caption2 : .caption)
+                .bold()
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: compact ? 8 : 9))
+                    .foregroundStyle(.secondary.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(compact ? 4 : 6)
+        .background(
+            RoundedRectangle(cornerRadius: compact ? 7 : 8).fill(.thinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: compact ? 7 : 8)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
+
+
 
 // MARK: - 画像が無い/失敗時の簡易アイコン
 private struct MonogramIcon: View {
@@ -280,10 +440,9 @@ private struct MonogramIcon: View {
             Circle().fill(.gray.opacity(0.2))
             Text(String(text.prefix(2))).font(.caption).bold()
         }
-        .frame(width: 40, height: 40)
+        .frame(width: 44, height: 44)
     }
 }
-
 
 #Preview {
     ContentView()
