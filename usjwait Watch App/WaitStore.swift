@@ -29,9 +29,33 @@ final class WaitStore: ObservableObject {
 
     func loadMasterAndRefresh() async {
         self.masters = await MasterRepository.shared.load()
-        await refresh()
+        await refresh() // 初回は従来どおり待ち時間のみ
     }
 
+    // === 追加：強制更新対応 ===
+    /// 手動リフレッシュなどで「カタログも取り直す/キャッシュ全消し」の制御付き
+    /// - Parameters:
+    ///   - includeCatalog: true なら Master も再取得してから待ち時間更新
+    ///   - force: true なら Master/Wait 両キャッシュを削除してから再構築
+    // 既存をこれに差し替え
+    func refresh(includeCatalog: Bool, force: Bool = false) async {
+        if force {
+            MasterRepository.shared.clearCache()
+            CacheStore.shared.clear()
+            self.masters = []
+            self.attractions = []
+            self.lastFetch = nil
+            self.errorMessage = nil
+        }
+        if includeCatalog {
+            // 手動更新時はリモート確認（ETag）を必ず走らせたいので force:true で
+            self.masters = await MasterRepository.shared.load(force: true)
+        }
+        await refresh() // 待ち時間の再構築（既存）
+    }
+
+
+    // 互換：引数なし（通常リフレッシュ）
     func refresh() async {
         guard !isLoading else { return }
         isLoading = true
@@ -55,6 +79,7 @@ final class WaitStore: ObservableObject {
             }
         }
 
+        // 並び順：待ち時間（nil は末尾）
         rows.sort {
             let wa = $0.waitMinutes ?? Int.max
             let wb = $1.waitMinutes ?? Int.max

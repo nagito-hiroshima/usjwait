@@ -20,4 +20,11 @@ final class CacheStore {
         guard let data = try? Data(contentsOf: cacheURL) else { return nil }
         return try? JSONDecoder().decode(APIResponse.self, from: data)
     }
+    
+    // CacheStore.swift に追加
+    func clear() {
+        UserDefaults.standard.removeObject(forKey: "api_response_cache")
+    }
+
 }
+

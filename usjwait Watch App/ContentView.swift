@@ -56,7 +56,7 @@ struct ContentView: View {
                 }
                 // 手動更新
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { Task { await store.refresh() } } label: {
+                    Button { Task { await store.refresh(includeCatalog: true) } } label: {
                         Image(systemName: "arrow.clockwise")
                     }
                 }

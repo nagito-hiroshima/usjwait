@@ -5,6 +5,40 @@ struct AttractionMasterFile: Codable {
     let version: Int
     let generated_at: Date?
     let items: [AttractionMaster]
+
+    // 二重ラップ { items: [...] } に対応するための薄いラッパ
+    private struct ItemsWrapper: Codable {
+        let items: [AttractionMaster]
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case generated_at
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try c.decode(Int.self, forKey: .version)
+        self.generated_at = try? c.decode(Date.self, forKey: .generated_at)
+
+        // まずは items を直接の配列として読む
+        if let direct = try? c.decode([AttractionMaster].self, forKey: .items) {
+            self.items = direct
+            return
+        }
+        // ダメなら { items: [...] } のラッパとして読む
+        if let wrapped = try? c.decode(ItemsWrapper.self, forKey: .items) {
+            self.items = wrapped.items
+            return
+        }
+
+        // どちらでもなければエラー
+        throw DecodingError.dataCorrupted(
+            .init(codingPath: [CodingKeys.items],
+                  debugDescription: "items は配列または {items:[...]} である必要があります")
+        )
+    }
 }
 
 struct AttractionMaster: Identifiable, Codable, Hashable {
@@ -20,7 +54,7 @@ struct AttractionMaster: Identifiable, Codable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, displayName, shortName, codeName, apiTitle, endpoint, area, active
-        case imageURL = "image_url"
+        case imageURL = "image_url" // image_url → imageURL
     }
 }
 
